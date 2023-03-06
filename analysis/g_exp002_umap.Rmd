@@ -1,0 +1,259 @@
+---
+title: "Experiment002: UMAP visualization of zircon"
+author: "Joe Skufca"
+date: "2023-02-15"
+output: 
+  html_notebook:
+    toc: true
+    toc_depth: 3
+---
+
+The primary object of this experiment is to visualize zircon characteristics using UMAP and to choose reasonable parameter values.  
+
+Experiment 2 will move toward assessing the geospatial aspects of the data, using the UMAP characterization as an exploratory tool.
+
+
+
+# Setup
+
+```{r}
+library(plotly)
+library(here)
+library(readxl)
+library(tidyverse)
+library(gghighlight)
+library(lubridate)
+library(janitor)
+
+library(fs)
+
+library(rgl)
+library(umap)
+```
+
+
+# Load Data
+
+Read the raw data:
+
+```{r}
+file1=here("data-raw","ME_Geochron_ALL_FILTERED_02.xlsx")
+df_r=read_excel(file1,sheet=3) %>% clean_names() 
+
+```
+
+Extract a subset of the columns that are relevant.  We consider this as the "working" dataframe.
+
+Some choices:
+
+* Keep only one age calculation (207_206), which appears most accurate.
+* Keep only information characterizing the sample, not the process (so - discard scientist name, equipment, date of measurement)
+* ratio variables not retained as they could be recreated from raw variables if needed.
+
+```{r}
+df_w = df_r %>% rowid_to_column("zircon") %>%
+  select(zircon,1:geological_domain,class:geochron_id,
+                       final_age207_206:final_age207_206_prop2se,p:u_2se)
+
+
+
+```
+
+We also create a dataframe focused specifically of the metric variables:
+
+```{r message=FALSE, warning=FALSE}
+df_m=df_w %>% select(-contains("2se")) %>% select(zircon:station_id,final_age207_206:u ) %>%
+  mutate(across(final_age207_206:u,as.numeric))
+```
+
+Also, we pull a dataframe focused on meta-variables (and categorical) :
+
+```{r}
+df_meta=df_w %>% select(zircon:rock_type)
+```
+
+
+## Data cleaning and prep
+
+Visualize for missing data:
+
+```{r fig.width=12}
+naniar::vis_miss(df_m)
+```
+
+We elimate the points for which we dont have multivariate data (beyond 1730).
+
+```{r}
+df_2 =df_m %>% slice_head(n=1730)
+naniar::vis_miss(df_2)
+```
+
+
+#### Let's subset to columns with nearly complete data:
+
+```{r}
+df_v=df_2 %>% select(1:4,ti:sr,nb:pr,sm:gd,yb,hf,th,u)
+naniar::vis_miss(df_v)
+```
+
+The missing date for phosphorus is BDL, which we will refill with 0s.
+
+```{r message=FALSE, warning=FALSE, fig.width=12}
+#df_v2=df_v  %>% drop_na() %>% slice_sample(prop=1)
+df_v2=df_v  %>% replace(is.na(.), 0) %>% slice_sample(prop=1)
+
+```
+
+# Utility function for plotting
+
+The helper function below will assist.
+
+```{r plotfun}
+my_plot=function(umap,zirc_list,var,facet=TRUE) {
+  
+  if (facet) {
+  df1=as_tibble(umap$layout) %>%
+    mutate(zircon=zirc_list) %>% 
+    left_join(df_meta) 
+  
+    p=df1 %>% ggplot(aes(V1,V2,color={{var}})) +geom_point()+
+    facet_wrap(vars({{var}}))+
+    gghighlight()+theme_minimal()
+  
+  print(p)
+  }
+  
+   p1=df1 %>% ggplot(aes(V1,V2,color={{var}})) +geom_point()+theme_minimal()
+  
+  print(p1)
+
+  
+  df1
+}
+
+
+```
+
+
+
+### Let's try this data by building UMAP coordinates.
+
+
+Let's revisualize, working up slowly to the full dataset:
+
+
+ 
+```{r, warning=FALSE, fig.width=12}
+umap_data=df_v2 %>% select(-zircon,-station_id) %>%
+  mutate(across(.fns=scales::rescale))
+zirclist= df_v2 %>% select(zircon) %>% pull()
+
+
+umap_v=umap(umap_data,min_dist=0.0001,n_neighbors=30,metric="manhattan")
+
+```
+ 
+```{r, warning=FALSE, fig.width=12}
+df_out=my_plot(umap_v,zirclist,var=station_id)
+```
+
+```{r, warning=FALSE, fig.width=12}
+df_out=my_plot(umap_v,zirclist,var=zone)
+```
+
+```{r, warning=FALSE, fig.width=12}
+df_out=my_plot(umap_v,zirclist,var=geological_domain)
+```
+
+```{r, warning=FALSE, fig.width=12}
+df_out=my_plot(umap_v,zirclist,var=rock_type)
+```
+
+## Anything interesting in 3d vis?
+
+
+```{r}
+umap_v3=umap(umap_data,min_dist=0.0001,n_neighbors=30,metric="manhattan",n_components=3)
+```
+
+```{r fig.width=12}
+# umap_labels=df_v2 %>% select(zircon) %>%
+#   left_join(df_meta) %>%  pull(rock_type)
+
+umap_labels=df_v2 %>% select(zircon) %>%
+   left_join(df_meta)
+
+ df3=as_tibble(umap_v3$layout) %>%
+    bind_cols(umap_labels)
+ 
+ #df1 %>% ggplot(aes(V1,V2,color=g)) +geom_point()+theme_minimal()
+ 
+ df3 %>% ggplot(aes(V1,V2,color=geological_domain)) +geom_point()+theme_minimal()+
+   facet_wrap(~station_id)
+ 
+ 
+```
+
+```{r}
+plot_ly(df3, x = ~V1, y = ~V2, z = ~V3, color = ~geological_domain,size=3)
+
+```
+
+# Other data studies
+
+Lets check for correlations:
+
+```{r}
+library(GGally)
+pairs(umap_data %>% select(8:13))
+```
+
+
+
+
+
+### Two variables
+
+
+```{r fig.width=12}
+  df1=as_tibble(umap_v$layout) %>%
+    mutate(zircon=zirclist) %>% 
+    left_join(df_meta) 
+  
+  df1 %>% ggplot(aes(V1,V2,color=class)) +geom_point()+
+    facet_wrap(vars(zone,station_id))+
+    theme_minimal()
+  
+```
+
+
+# Include lead
+
+#### Let's subset to columns with nearly complete data:
+
+```{r}
+df_v=df_2 %>% select(1:4,ti:sr,nb:pr,sm:gd,yb,hf,th,pb_ppm_m204:u)
+naniar::vis_miss(df_v)
+```
+
+```{r message=FALSE, warning=FALSE, fig.width=12}
+#df_v2=df_v  %>% drop_na() %>% slice_sample(prop=1)
+df_v2=df_v  %>% replace(is.na(.), 0) %>% slice_sample(prop=1)
+
+```
+
+
+```{r, warning=FALSE, fig.width=12}
+umap_data=df_v2 %>% select(-zircon,-station_id) %>%
+  mutate(across(.fns=scales::rescale))
+zirclist= df_v2 %>% select(zircon) %>% pull()
+
+
+umap_v=umap(umap_data,min_dist=0.0001,n_neighbors=30,metric="manhattan")
+
+```
+ 
+```{r, warning=FALSE, fig.width=12}
+df_out=my_plot(umap_v,zirclist,var=station_id)
+```
+
