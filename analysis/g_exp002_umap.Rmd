@@ -1,5 +1,5 @@
 ---
-title: "Experiment001: UMAP visualization of zircon"
+title: "Experiment002: UMAP visualization of zircon"
 author: "Joe Skufca"
 date: "2023-02-15"
 output: 
@@ -8,7 +8,9 @@ output:
     toc_depth: 3
 ---
 
-The primary object of this experiment is to visualize zircon characteristics using UMAP and to choose reasonable parameter values.
+The primary object of this experiment is to visualize zircon characteristics using UMAP and to choose reasonable parameter values.  
+
+Experiment 2 will move toward assessing the geospatial aspects of the data, using the UMAP characterization as an exploratory tool.
 
 
 
@@ -42,25 +44,36 @@ df_r=read_excel(file1,sheet=3) %>% clean_names()
 
 Extract a subset of the columns that are relevant.  We consider this as the "working" dataframe.
 
+Some choices:
+
+* Keep only one age calculation (207_206), which appears most accurate.
+* Keep only information characterizing the sample, not the process (so - discard scientist name, equipment, date of measurement)
+* ratio variables not retained as they could be recreated from raw variables if needed.
+
 ```{r}
 df_w = df_r %>% rowid_to_column("zircon") %>%
   select(zircon,1:geological_domain,class:geochron_id,
                        final_age207_206:final_age207_206_prop2se,p:u_2se)
+
+
+
 ```
 
-We also create a dataframe focuses specifically of the measure variables:
+We also create a dataframe focused specifically of the metric variables:
 
 ```{r message=FALSE, warning=FALSE}
 df_m=df_w %>% select(-contains("2se")) %>% select(zircon:station_id,final_age207_206:u ) %>%
   mutate(across(final_age207_206:u,as.numeric))
 ```
 
-Also, we pull a dataframe focused on meta-varialbes:
+Also, we pull a dataframe focused on meta-variables (and categorical) :
 
 ```{r}
 df_meta=df_w %>% select(zircon:rock_type)
 ```
 
+
+## Data cleaning and prep
 
 Visualize for missing data:
 
@@ -68,42 +81,34 @@ Visualize for missing data:
 naniar::vis_miss(df_m)
 ```
 
-# A first visualization
-
-
-We will start by using only the dataset of complete data:
-
-
+We elimate the points for which we dont have multivariate data (beyond 1730).
 
 ```{r}
-df_comp=df_m %>% drop_na()
+df_2 =df_m %>% slice_head(n=1730)
+naniar::vis_miss(df_2)
 ```
 
 
-To keep the problem small (for initial testing), we will use only a subsample of those points.
+#### Let's subset to columns with nearly complete data:
 
 ```{r}
-df_100=df_comp %>% slice_sample(prop = .5)
+df_v=df_2 %>% select(1:4,ti:sr,nb:pr,sm:gd,yb,hf,th,u)
+naniar::vis_miss(df_v)
 ```
 
+The missing date for phosphorus is BDL, which we will refill with 0s.
 
-Separate numeric data from label.
+```{r message=FALSE, warning=FALSE, fig.width=12}
+#df_v2=df_v  %>% drop_na() %>% slice_sample(prop=1)
+df_v2=df_v  %>% replace(is.na(.), 0) %>% slice_sample(prop=1)
 
-```{r}
-umap_data=df_100 %>% select(-zircon,-station_id) %>%
-  mutate(across(.fns=scale))
-zirc_list_100=df_100 %>% select(zircon) %>% pull()
 ```
 
+# Utility function for plotting
 
+The helper function below will assist.
 
-
-Fit the umap model.
-```{r}
-umap_100=umap(umap_data)
-```
-
-```{r}
+```{r plotfun}
 my_plot=function(umap,zirc_list,var,facet=TRUE) {
   
   if (facet) {
@@ -115,84 +120,30 @@ my_plot=function(umap,zirc_list,var,facet=TRUE) {
     facet_wrap(vars({{var}}))+
     gghighlight()+theme_minimal()
   
-  
   print(p)
   }
   
    p1=df1 %>% ggplot(aes(V1,V2,color={{var}})) +geom_point()+theme_minimal()
   
-  
   print(p1)
-  
-  
-  
+
   
   df1
 }
 
 
-df_out=my_plot(umap_100,zirc_list_100,var=station_id)
-```
-
-
-Fit the umap model.
-
-Change mindist
-```{r}
-umap_100=umap(umap_data,min_dist=0.0001,n_neighbors=10,metric="manhattan")
-df_out=my_plot(umap_100,zirc_list_100,var=station_id)
 ```
 
 
 
-
-### Let's try using more data.
-
-
-We elimate the points for which we dont have multivariate data (beyond 1730).
-
-```{r}
-df_2 =df_m %>% slice_head(n=1730)
-naniar::vis_miss(df_2)
-```
-
-
-#### What if we complete the dataset with 0s.
-```{r}
-df_v=df_2 %>% replace(is.na(.), 0)
-```
+### Let's try this data by building UMAP coordinates.
 
 
 Let's revisualize, working up slowly to the full dataset:
 
-```{r}
-df_v2=df_v %>% slice_sample(prop=.8)
 
-
-umap_data=df_v2 %>% select(-zircon,-station_id) %>%
-  mutate(across(.fns=scales::rescale))
-zirclist= df_v2 %>% select(zircon) %>% pull()
-
-
-umap_v=umap(umap_data,min_dist=0.0001,n_neighbors=10,metric="manhattan")
-
-df_out=my_plot(umap_v,zirclist,var=station_id)
-```
-
-#### Let's subset to columns with nearly complete data:
-
-```{r}
-df_v=df_2 %>% select(1:4,ti:sr,nb:pr,sm:gd,yb,hf,th,u)
-naniar::vis_miss(df_v)
-```
-
-
-Let's revisualize, working up slowly to the full dataset:
-
-```{r message=FALSE, warning=FALSE, fig.width=12}
-df_v2=df_v  %>% drop_na() %>% slice_sample(prop=1)
-
-
+ 
+```{r, warning=FALSE, fig.width=12}
 umap_data=df_v2 %>% select(-zircon,-station_id) %>%
   mutate(across(.fns=scales::rescale))
 zirclist= df_v2 %>% select(zircon) %>% pull()
@@ -258,22 +209,8 @@ pairs(umap_data %>% select(8:13))
 ```
 
 
-What does PCA reveal?
 
-```{r}
-my_pca <- prcomp(umap_data)
-summary(my_pca)
-```
 
-10 principal compents is sufficient.
-
-```{r fig.width=12}
-umap_p=umap(my_pca$x[,1:10],min_dist=0.0001,n_neighbors=30,metric="manhattan")
-
-df_out=my_plot(umap_p,zirclist,var=station_id)
-```
-
-PCA seems to not be a good choice.
 
 ### Two variables
 
@@ -288,3 +225,35 @@ PCA seems to not be a good choice.
     theme_minimal()
   
 ```
+
+
+# Include lead
+
+#### Let's subset to columns with nearly complete data:
+
+```{r}
+df_v=df_2 %>% select(1:4,ti:sr,nb:pr,sm:gd,yb,hf,th,pb_ppm_m204:u)
+naniar::vis_miss(df_v)
+```
+
+```{r message=FALSE, warning=FALSE, fig.width=12}
+#df_v2=df_v  %>% drop_na() %>% slice_sample(prop=1)
+df_v2=df_v  %>% replace(is.na(.), 0) %>% slice_sample(prop=1)
+
+```
+
+
+```{r, warning=FALSE, fig.width=12}
+umap_data=df_v2 %>% select(-zircon,-station_id) %>%
+  mutate(across(.fns=scales::rescale))
+zirclist= df_v2 %>% select(zircon) %>% pull()
+
+
+umap_v=umap(umap_data,min_dist=0.0001,n_neighbors=30,metric="manhattan")
+
+```
+ 
+```{r, warning=FALSE, fig.width=12}
+df_out=my_plot(umap_v,zirclist,var=station_id)
+```
+
