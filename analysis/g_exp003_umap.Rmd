@@ -10,8 +10,7 @@ output:
 
 The primary object of this experiment is to visualize zircon characteristics using UMAP and to choose reasonable parameter values.  
 
-Experiment 2 will move toward assessing the geospatial aspects of the data, using the UMAP characterization as an exploratory tool.
-
+Experiment 3 coloring with age.
 
 
 # Setup
@@ -69,7 +68,7 @@ df_m=df_w %>% select(-contains("2se")) %>% select(zircon:station_id,final_age207
 Also, we pull a dataframe focused on meta-variables (and categorical) :
 
 ```{r}
-df_meta=df_w %>% select(zircon:rock_type)
+df_meta=df_w %>% select(zircon:rock_type,age=final_age207_206)
 ```
 
 
@@ -119,18 +118,13 @@ my_plot=function(umap,zirc_list,var,facet=TRUE) {
     p=df1 %>% ggplot(aes(V1,V2,color={{var}})) +geom_point()+
     facet_wrap(vars({{var}}))+
     gghighlight()+theme_minimal()
-  
   print(p)
   }
-  
    p1=df1 %>% ggplot(aes(V1,V2,color={{var}})) +geom_point()+theme_minimal()
-  
   print(p1)
 
-  
   df1
 }
-
 
 ```
 
@@ -165,69 +159,33 @@ df_out=my_plot(umap_v,zirclist,var=zone)
 df_out=my_plot(umap_v,zirclist,var=geological_domain)
 ```
 
-```{r, warning=FALSE, fig.width=12}
-df_out=my_plot(umap_v,zirclist,var=rock_type)
-```
-
-## Anything interesting in 3d vis?
 
 
-```{r}
-umap_v3=umap(umap_data,min_dist=0.0001,n_neighbors=30,metric="manhattan",n_components=3)
-```
-
-```{r fig.width=12}
-# umap_labels=df_v2 %>% select(zircon) %>%
-#   left_join(df_meta) %>%  pull(rock_type)
-
-umap_labels=df_v2 %>% select(zircon) %>%
-   left_join(df_meta)
-
- df3=as_tibble(umap_v3$layout) %>%
-    bind_cols(umap_labels)
- 
- #df1 %>% ggplot(aes(V1,V2,color=g)) +geom_point()+theme_minimal()
- 
- df3 %>% ggplot(aes(V1,V2,color=geological_domain)) +geom_point()+theme_minimal()+
-   facet_wrap(~station_id)
- 
- 
-```
-
-```{r}
-plot_ly(df3, x = ~V1, y = ~V2, z = ~V3, color = ~geological_domain,size=3)
-
-```
-
-# Other data studies
-
-Lets check for correlations:
-
-```{r}
-library(GGally)
-pairs(umap_data %>% select(8:13))
-```
+# Color by age
 
 
-
-
-
-### Two variables
-
-
-```{r fig.width=12}
-  df1=as_tibble(umap_v$layout) %>%
-    mutate(zircon=zirclist) %>% 
+```{r plotfun2}
+my_plot2=function(umap,zirc_list,var,facet=TRUE) {
+  
+  if (facet) {
+  df1=as_tibble(umap$layout) %>%
+    mutate(zircon=zirc_list) %>% 
     left_join(df_meta) 
   
-  df1 %>% ggplot(aes(V1,V2,color=class)) +geom_point()+
-    facet_wrap(vars(zone,station_id))+
-    theme_minimal()
-  
+    p=df1 %>% ggplot(aes(V1,V2,color=age)) +geom_point()+
+    facet_wrap(vars({{var}}))+scale_color_viridis_c()+
+    gghighlight()+theme_minimal()
+  print(p)
+  }
+   p1=df1 %>% ggplot(aes(V1,V2,color=age)) +scale_color_viridis_c()+
+     geom_point()+theme_minimal()
+  print(p1)
+
+  df1
+}
+
 ```
 
-
-# Include lead
-
-
-
+```{r, warning=FALSE, fig.width=12}
+df_out=my_plot2(umap_v,zirclist,var=station_id)
+```
