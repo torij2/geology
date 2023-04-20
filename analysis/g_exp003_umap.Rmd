@@ -1,5 +1,5 @@
 ---
-title: "Experiment002: UMAP visualization of zircon"
+title: "Experiment003: UMAP visualization of zircon"
 author: "Joe Skufca"
 date: "2023-02-15"
 output: 
@@ -28,6 +28,8 @@ library(fs)
 
 library(rgl)
 library(umap)
+library(sf)
+library(ggmap)
 ```
 
 
@@ -80,7 +82,7 @@ Visualize for missing data:
 naniar::vis_miss(df_m)
 ```
 
-We elimate the points for which we dont have multivariate data (beyond 1730).
+We eliminate the points for which we dont have multivariate data (beyond 1730).
 
 ```{r}
 df_2 =df_m %>% slice_head(n=1730)
@@ -189,3 +191,90 @@ my_plot2=function(umap,zirc_list,var,facet=TRUE) {
 ```{r, warning=FALSE, fig.width=12}
 df_out=my_plot2(umap_v,zirclist,var=station_id)
 ```
+
+# Plotting on map
+
+```{r}
+df_r=df_meta %>% group_by(station_id) %>% 
+  select(station_id,latitude,longitude,zone,geological_domain,class,subclass,rock_type) %>% summarise_all(first) %>% ungroup() %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+
+```
+
+```{r results = "asis"}
+library(mapview)
+
+mapview(df_r)
+```
+
+
+
+
+
+```{r}
+p=df_r %>% ggplot()+geom_sf()+theme_minimal()
+
+
+p
+
+
+this_rock=df_out %>% 
+  filter(station_id==station_id[1]) %>% 
+  ggplot(aes(V1,V2,color=age))+
+     geom_point(size=1)+theme_void()+scale_color_viridis_c()+ theme(legend.position = "none")
+
+
+this_rock + theme(axis.text = element_text(size = 4),
+    axis.text.x = element_text(colour = "antiquewhite"),
+    axis.text.y = element_text(colour = "antiquewhite"),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "antiquewhite",
+        linetype = "solid")) +labs(x = NULL, y = NULL)
+
+g=ggplotGrob(this_rock)
+
+
+#p
+p1=p+annotation_custom(grob=g,xmin=df_out$longitude[1]-1,
+                    xmax=df_out$longitude[1]+.5,
+                    ymin=df_out$latitude[1],
+                    ymax=df_out$latitude[1]+1)
+p1
+
+```
+
+
+## Let's try mapview with leafpop
+```{r}
+library(leafpop)
+```
+
+Visualizing rock locations:
+```{r}
+mapview(df_r)
+```
+
+Now lets create individual plots for each rock:
+
+```{r}
+
+popplot=function(id){
+  df_out %>% 
+  filter(station_id==id) %>% 
+  ggplot(aes(V1,V2,color=age))+
+     geom_point(size=1)+theme_void()+scale_color_viridis_c()+ theme(legend.position = "none") -> p
+  p
+}
+
+dfr2=df_r %>% semi_join(df_out, by="station_id")
+
+rock=map(dfr2$station_id,popplot) # list of ppoplots
+
+```
+
+Re-visualize
+```{r}
+mapview(dfr2,popup=popupGraph(rock,width=100,height=80))
+```
+
